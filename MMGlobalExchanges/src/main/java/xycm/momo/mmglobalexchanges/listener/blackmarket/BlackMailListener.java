@@ -1,96 +1,108 @@
 package xycm.momo.mmglobalexchanges.listener.blackmarket;
 
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.inventory.ItemStack;
 import xycm.momo.mmglobalexchanges.MMGlobalExchanges;
+import xycm.momo.mmglobalexchanges.core.blackmarket.BlackMarketStrategy;
 import xycm.momo.mmglobalexchanges.file.PlayerData;
-import xycm.momo.mmglobalexchanges.thread.MailInfo;
-import xycm.momo.mmglobalexchanges.ui.blackmarket.BlackPersonalInfo;
+import xycm.momo.mmglobalexchanges.listener.common.AbstractMailListener;
+import xycm.momo.mmglobalexchanges.ui.blackmarket.BlackMail;
+import xycm.momo.mmglobalexchanges.ui.blackmarket.BlackMarket;
+import xycm.momo.mmglobalexchanges.ui.common.MailUI;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 个人邮箱界面监听器
+ * 黑市邮件监听器
  */
-public class BlackMailListener implements Listener {
-    // 邮件界面返回哪个界面信息
-    public static Map<String, String> mailReturnInfo = new HashMap<>();
-    @EventHandler
-    public void clickMail(InventoryClickEvent event) {
-        String title = MMGlobalExchanges.instance.getConfig().getString("black_market.personal.mail");
-        ItemStack clickedItem = event.getCurrentItem();
-        if (clickedItem == null || clickedItem.getType() == Material.AIR) {
-            return;
+public class BlackMailListener extends AbstractMailListener {
+
+    // 存储槽位和邮件ID的映射关系
+    private final Map<String, List<String>> playerMailIds = new HashMap<>();
+    
+    public BlackMailListener() {
+        super(new BlackMarketStrategy());
+    }
+    
+    @Override
+    protected String getMailTitle() {
+        return "黑市邮件";
+    }
+    
+    @Override
+    protected Map<String, Object> getMailData(String playerName) {
+        return MMGlobalExchanges.instance.getPlayerData().getBlackMarketMail(playerName);
+    }
+    
+    @Override
+    protected boolean handlePickMail(Player player, String mailId) {
+        return MMGlobalExchanges.instance.getPlayerData().pickBlackMarketMail(player, mailId);
+    }
+    
+    @Override
+    protected int handlePickAll(Player player) {
+        PlayerData playerData = MMGlobalExchanges.instance.getPlayerData();
+        Map<String, Object> mailMap = getMailData(player.getName());
+        
+        if (mailMap == null || mailMap.isEmpty()) {
+            return 0;
         }
-        if (event.getView().getTitle().equals(title)) {
-            event.setCancelled(true);
-            Player player = (Player) event.getWhoClicked();
-
-            int rawSlot = event.getRawSlot();
-            PlayerData playerData = new PlayerData(player.getName());
-            if (rawSlot < 45) {
-                ItemStack item = event.getCurrentItem();
-                List<String> lore = item.getItemMeta().getLore();
-                int id = Integer.parseInt(lore.get(lore.size() - 2).split(" ")[1]);
-                int price = Integer.parseInt(lore.get(lore.size() - 1).split(" ")[1]);
-                playerData.removeBlackMailItem(id);
-                playerData.addBlackSellItem(id);
-                playerData.addBlackSellNumber();
-                playerData.addBlackSellPrice(price);
-
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), MMGlobalExchanges.instance.getConfig().getString("add_money").replace("<player>", player.getName()).replace("<price>", String.valueOf(price)));
-                if (MMGlobalExchanges.instance.getConfig().getBoolean("info")) {
-                    MMGlobalExchanges.blackMail.setInfo(player, "收入 " + price + " 时息");
-                    MMGlobalExchanges.blackMail.open(player);
-                    MailInfo.freshBlackMailInfo(player);
-                } else {
-                    MMGlobalExchanges.blackMail.open(player);
-                    player.sendMessage(MMGlobalExchanges.instance.getConfig().getString("placeholder") + "收入 " + price + " 时息");
-                }
-            }
-            int inventorySize = event.getInventory().getSize();
-            // 检查玩家是否从界面拿取物品
-            if (rawSlot < inventorySize) {
-                if (event.getRawSlot() == 46) {
-                    if (mailReturnInfo.get(player.getName()).equals("个人信息")) {
-                        BlackPersonalInfo personalInfo = new BlackPersonalInfo(MMGlobalExchanges.instance.getConfig().getString("black_market.personal.name"));
-                        personalInfo.open(player);
-                    } else if (mailReturnInfo.get(player.getName()).equals("黑市")) {
-                        if (MMGlobalExchanges.blackMarket.getPage(player) == 0) {
-                            MMGlobalExchanges.blackMarket.setPage(player, 1);
-                            MMGlobalExchanges.blackMarket.open(player);
-                        } else {
-                            MMGlobalExchanges.blackMarket.open(player);
-                        }
-                    }
-                }
-                if (event.getRawSlot() == 47) {
-                    MMGlobalExchanges.blackMail.setPage(player, 1);
-                    MMGlobalExchanges.blackMail.open(player);
-                }
-                if (event.getRawSlot() == 48) {
-                    MMGlobalExchanges.blackMail.setPage(player, MMGlobalExchanges.blackMail.getPage(player) - 1);
-                    MMGlobalExchanges.blackMail.open(player);
-                }
-                if (event.getRawSlot() == 50) {
-                    MMGlobalExchanges.blackMail.setPage(player, MMGlobalExchanges.blackMail.getPage(player) + 1);
-                    MMGlobalExchanges.blackMail.open(player);
-                }
-                if (event.getRawSlot() == 51) {
-                    MMGlobalExchanges.blackMail.setPage(player, (MMGlobalExchanges.blackMail.getMailNum() - 1) / MMGlobalExchanges.instance.getConfig().getInt("black_market_personal_mail_max") + 1);
-                    MMGlobalExchanges.blackMail.open(player);
-                }
-                if (event.getRawSlot() == 53) {
-                    MMGlobalExchanges.blackMail.pickAll(player);
-                }
+        
+        int count = 0;
+        for (String mailId : new ArrayList<>(mailMap.keySet())) {
+            if (playerData.pickBlackMarketMail(player, mailId)) {
+                count++;
             }
         }
+        
+        return count;
+    }
+    
+    @Override
+    protected String getMailIdFromSlot(Player player, int slot) {
+        List<String> mailIds = playerMailIds.get(player.getName());
+        if (mailIds != null && slot < mailIds.size()) {
+            return mailIds.get(slot);
+        }
+        return null;
+    }
+    
+    @Override
+    protected MailUI getMailUI(Player player) {
+        return BlackMail.getInstance();
+    }
+    
+    @Override
+    protected void refreshMailUI(Player player, int page) {
+        // 准备存储当前页面的邮件ID
+        List<String> currentPageMailIds = new ArrayList<>();
+        playerMailIds.put(player.getName(), currentPageMailIds);
+        
+        // 获取玩家的邮件数据
+        Map<String, Object> mailMap = getMailData(player.getName());
+        if (mailMap != null && !mailMap.isEmpty()) {
+            // 为了分页，先获取所有邮件ID
+            List<String> allMailIds = new ArrayList<>(mailMap.keySet());
+            
+            // 计算当前页显示的邮件
+            int itemsPerPage = 9; // 每页9封邮件
+            int startIndex = (page - 1) * itemsPerPage;
+            int endIndex = Math.min(startIndex + itemsPerPage, allMailIds.size());
+            
+            // 添加当前页的邮件ID
+            for (int i = startIndex; i < endIndex; i++) {
+                currentPageMailIds.add(allMailIds.get(i));
+            }
+        }
+        
+        // 打开黑市邮件界面
+        BlackMail.getInstance().open(player, page);
+    }
+    
+    @Override
+    protected void openMainUI(Player player) {
+        BlackMarket.getInstance().open(player, 1);
     }
 }

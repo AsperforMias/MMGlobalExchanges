@@ -1,98 +1,154 @@
 package xycm.momo.mmglobalexchanges.listener.market;
 
-import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
-import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Inventory;
 import xycm.momo.mmglobalexchanges.MMGlobalExchanges;
-import xycm.momo.mmglobalexchanges.ui.market.*;
+import xycm.momo.mmglobalexchanges.core.market.NormalMarketStrategy;
+import xycm.momo.mmglobalexchanges.listener.common.AbstractMarketListener;
+import xycm.momo.mmglobalexchanges.ui.common.MarketUI;
+import xycm.momo.mmglobalexchanges.ui.market.LaunchRecord;
+import xycm.momo.mmglobalexchanges.ui.market.Mail;
+import xycm.momo.mmglobalexchanges.ui.market.Market;
+import xycm.momo.mmglobalexchanges.ui.market.PersonalInfo;
 
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * 市场界面监听器
+ * 市场监听器
  */
-public class MarketListener implements Listener {
-    @EventHandler
-    public void clickMarket(InventoryClickEvent event) {
-        Market market = MMGlobalExchanges.market;
-        if (!event.getInventory().getTitle().equals(market.getTitle())) {
-            return;
+public class MarketListener extends AbstractMarketListener {
+    
+    public MarketListener() {
+        super(new NormalMarketStrategy());
+    }
+    
+    @Override
+    protected String getInventoryTitle() {
+        return "市场";
+    }
+    
+    @Override
+    protected boolean handleItemClick(InventoryClickEvent event, Inventory inventory, Player player, int slot) {
+        // 获取当前的市场界面
+        Market market = Market.getPlayerInventory(player);
+        if (market == null) {
+            return false;
         }
-        event.setCancelled(true);
-
-        Player player = (Player) event.getWhoClicked();
-        ItemStack clickedItem = event.getCurrentItem();
-
-        if (clickedItem == null || clickedItem.getType() == Material.AIR) {
-            return;
-        }
-
-        int rawSlot = event.getRawSlot();
-        int inventorySize = event.getInventory().getSize();
-        // 检查玩家是否从 Market 界面拿取物品
-        if (rawSlot < inventorySize) {
-
-            String displayName = clickedItem.getItemMeta().getDisplayName();
-            int slot = event.getSlot();
-
-            if (slot < 45) {
-                if (event.getCurrentItem().getType().equals(Material.AIR)) {
-                    return;
+        
+        // 根据点击的槽位处理不同的功能
+        switch (slot) {
+            case MarketUI.SLOT_LAUNCH:
+                // 上架物品
+                handleLaunchItem(player);
+                break;
+                
+            case MarketUI.SLOT_RETURN:
+                // 返回按钮，此处不做处理
+                break;
+                
+            case MarketUI.SLOT_FIRST_PAGE:
+                // 首页
+                market.open(player, 1);
+                break;
+                
+            case MarketUI.SLOT_PREV_PAGE:
+                // 上一页
+                market.open(player, market.getPage(player) - 1);
+                break;
+                
+            case MarketUI.SLOT_SEARCH:
+                // 搜索
+                handleSearch(player);
+                break;
+                
+            case MarketUI.SLOT_NEXT_PAGE:
+                // 下一页
+                market.open(player, market.getPage(player) + 1);
+                break;
+                
+            case MarketUI.SLOT_LAST_PAGE: {
+                // 末页
+                int totalItems = MMGlobalExchanges.marketFile.getSize(player);
+                int itemsPerPage = strategy.getItemsPerPage();
+                int maxPage = (totalItems <= 0) ? 1 : ((totalItems - 1) / itemsPerPage + 1);
+                market.open(player, maxPage);
+                break;
+            }
+                
+            case 53:
+                // 个人信息
+                handlePersonalInfo(player);
+                break;
+                
+            default:
+                // 检查是否点击了商品
+                if (slot >= 0 && slot < 45) {
+                    handleItemPurchase(player, slot);
                 }
-                ItemStack item = event.getCurrentItem();
-                List<String> lore = item.getItemMeta().getLore();
-                int id = Integer.parseInt(lore.get(lore.size() - 3).split(" ")[1]);
-                int price = Integer.parseInt(lore.get(lore.size() - 1).split(" ")[1]);
-                Map<Integer, Integer> good = new HashMap<>();
-                good.put(id, price);
-                MMGlobalExchanges.purchase.put(player.getName(), good);
-                PurchaseConfirm purchaseConfirm = new PurchaseConfirm(MMGlobalExchanges.instance.getConfig().getString("market.confirm"));
-                purchaseConfirm.open(player);
-            }
-            if (displayName == null) {return;}
-            switch (slot) {
-                case 45:
-                    SelectItemListener.selectReturnInfo.put(player.getName(), "市场");
-                    SelectItem selectItem = new SelectItem(MMGlobalExchanges.instance.getConfig().getString("market.select"));
-                    selectItem.setInfo(player, " ");
-                    selectItem.open(player);
-                    break;
-                case 46:
-                    MMGlobalExchanges.search.setPage(player, 1);
-                    MMGlobalExchanges.search.open(player);
-                    break;
-                case 47:
-                    market.setPage(player, 1);
-                    market.open(player);
-                    break;
-                case 48:
-                    market.setPage(player, market.getPage(player) - 1);
-                    market.open(player);
-                    break;
-                case 49:
-                    PersonalInfo personalInfo = new PersonalInfo(MMGlobalExchanges.instance.getConfig().getString("market.personal.name"));
-                    personalInfo.open(player);
-                    break;
-                case 50:
-                    market.setPage(player, market.getPage(player) + 1);
-                    market.open(player);
-                    break;
-                case 51:
-                    market.setPage(player, (MMGlobalExchanges.marketFile.getSize(player) - 1) / MMGlobalExchanges.instance.getConfig().getInt("market_max") + 1);
-                    market.open(player);
-                    break;
-                case 53:
-                    market.close(player);
-                    break;
-            }
+                break;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 处理上架物品
+     */
+    private void handleLaunchItem(Player player) {
+        // 这里只是打开选择物品界面，之后会有专门的监听器处理上架流程
+        player.closeInventory();
+        player.sendMessage("§a请手持要上架的物品，然后输入价格");
+    }
+    
+    /**
+     * 处理搜索
+     */
+    private void handleSearch(Player player) {
+        // 根据配置决定使用DragonCore或原生搜索
+        if (MMGlobalExchanges.instance.getConfig().getBoolean("market_use_dragoncore")) {
+            MMGlobalExchanges.instance.getSearch().open(player);
         } else {
-            event.setCancelled(true);
+            player.sendMessage("§a请输入要搜索的物品名称");
+            player.closeInventory();
         }
     }
+    
+    /**
+     * 处理个人信息
+     */
+    private void handlePersonalInfo(Player player) {
+        PersonalInfo.getInstance().open(player);
+    }
+    
+    /**
+     * 处理物品购买
+     */
+    private void handleItemPurchase(Player player, int slot) {
+        Market market = Market.getPlayerInventory(player);
+        if (market == null) {
+            return;
+        }
+        
+        // 获取点击的物品
+        String itemId = getItemIdFromSlot(player, slot);
+        if (itemId == null) {
+            return;
+        }
+        
+        // 处理购买操作
+        boolean success = strategy.handlePurchase(player, itemId);
+        if (success) {
+            player.sendMessage("§a购买成功，物品已发送到您的邮箱");
+        }
+    }
+    
+    /**
+     * 从槽位获取物品ID
+     */
+    private String getItemIdFromSlot(Player player, int slot) {
+        // 这里需要根据实际情况实现获取物品ID的逻辑
+        // 暂时返回null作为占位
+        return null;
+    }
 }
-   
